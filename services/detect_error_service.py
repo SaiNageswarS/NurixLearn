@@ -9,6 +9,7 @@ from models.data_models import MathEvaluationInput, BoundingBox, MathEvaluationR
 from jobs.workflow import DetectErrorWorkflow
 from utils.database import database
 from utils.cache_decorator import cache_response, generate_request_cache_key, api_cache
+from services.bounding_box_tracker import bounding_box_tracker
 
 
 class DetectErrorRequest(BaseModel):
@@ -36,6 +37,11 @@ class DetectErrorResponse(BaseModel):
     llm_used: bool = Field(..., description="Whether LLM was used for analysis")
     solution_lines: list = Field(default_factory=list, description="Solution lines")
     llm_ocr_lines: list = Field(default_factory=list, description="LLM OCR lines")
+    
+    # Cumulative bounding box tracking fields
+    cumulative_bounding_box: Optional[Dict[str, Any]] = Field(None, description="Cumulative bounding box data")
+    session_stats: Optional[Dict[str, Any]] = Field(None, description="Session statistics")
+    total_attempts: int = Field(default=1, description="Total attempts for this session and question")
 
 
 class DetectErrorService:
@@ -55,20 +61,47 @@ class DetectErrorService:
         """Set up API routes."""
         
         @self.app.post("/detect-error", response_model=DetectErrorResponse)
-        @cache_response(ttl=3600, key_func=generate_request_cache_key)  # 1 hour cache
+        @cache_response(ttl=3600, key_func=generate_request_cache_key)  # 1 hour cache with session-aware key
         async def detect_error(request: DetectErrorRequest):
-            """Detect errors in handwritten mathematical solutions."""
+            """
+            Detect errors in handwritten mathematical solutions.
+            
+            Caching Strategy:
+            - Cache key includes socket_id for session-specific cumulative bounding box data
+            - Each unique combination of (socket_id, question_url, solution_url, bounding_box) gets its own cache entry
+            - This ensures that cumulative bounding box responses are properly cached per session
+            """
             try:
                 # Initialize services if not already done
                 if not self._initialized:
                     await self._initialize_services()
                 
+                # Track cumulative bounding box for this session and question
+                cumulative_bbox = await bounding_box_tracker.add_bounding_box(
+                    socket_id=request.socket_id,
+                    question_url=request.question_url,
+                    bounding_box=request.bounding_box,
+                    attempt_id=request.question_attempt_id
+                )
+                
+                # Get session statistics
+                session_stats = await bounding_box_tracker.get_session_stats(
+                    socket_id=request.socket_id,
+                    question_url=request.question_url
+                )
+                
                 # Extract image names from URLs
                 question_image = self._extract_image_name_from_url(request.question_url)
                 answer_image = self._extract_image_name_from_url(request.solution_url)
                 
-                # Convert bounding box format
-                bounding_box = self._convert_bounding_box(request.bounding_box)
+                # Convert bounding box format (use cumulative bounding box if available)
+                if cumulative_bbox.total_attempts > 1:
+                    # Use cumulative bounding box for analysis
+                    cumulative_bbox_dict = cumulative_bbox.get_union_box()
+                    bounding_box = self._convert_bounding_box(cumulative_bbox_dict)
+                else:
+                    # Use original bounding box for first attempt
+                    bounding_box = self._convert_bounding_box(request.bounding_box)
                 
                 # Create workflow input
                 workflow_input = MathEvaluationInput(
@@ -81,7 +114,10 @@ class DetectErrorService:
                     metadata={
                         "socket_id": request.socket_id,
                         "session_id": request.session_id,
-                        "question_attempt_id": request.question_attempt_id
+                        "question_attempt_id": request.question_attempt_id,
+                        "cumulative_attempts": cumulative_bbox.total_attempts,
+                        "original_bounding_box": request.bounding_box,
+                        "cumulative_bounding_box": cumulative_bbox.get_union_box()
                     }
                 )
                 
@@ -89,7 +125,9 @@ class DetectErrorService:
                 result = await self.workflow.run(workflow_input)
                 
                 # Convert result to API response format
-                response = self._convert_workflow_result_to_response(result, request)
+                response = self._convert_workflow_result_to_response(
+                    result, request, cumulative_bbox, session_stats
+                )
                 
                 return response
                 
@@ -121,6 +159,36 @@ class DetectErrorService:
             api_cache.clear()
             return {"message": "Cache cleared successfully", "cache_size": api_cache.size()}
 
+        @self.app.get("/session/{socket_id}/stats")
+        async def get_session_stats(socket_id: str, question_url: str):
+            """Get cumulative bounding box statistics for a session and question."""
+            try:
+                stats = await bounding_box_tracker.get_session_stats(socket_id, question_url)
+                return stats
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Error getting session stats: {str(e)}")
+
+        @self.app.get("/session/{socket_id}/all")
+        async def get_all_sessions(socket_id: str):
+            """Get all question sessions for a socket_id."""
+            try:
+                sessions = await bounding_box_tracker.get_all_sessions_for_socket(socket_id)
+                return {"socket_id": socket_id, "sessions": sessions}
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Error getting sessions: {str(e)}")
+
+        @self.app.delete("/session/{socket_id}/clear")
+        async def clear_session_data(socket_id: str, question_url: str):
+            """Clear bounding box data for a specific session and question."""
+            try:
+                cleared = await bounding_box_tracker.clear_session_data(socket_id, question_url)
+                return {
+                    "message": "Session data cleared successfully" if cleared else "No data found to clear",
+                    "cleared": cleared
+                }
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Error clearing session data: {str(e)}")
+
     async def _initialize_services(self):
         """Initialize required services."""
         try:
@@ -149,7 +217,13 @@ class DetectErrorService:
         
         return BoundingBox(x=x, y=y, width=width, height=height)
 
-    def _convert_workflow_result_to_response(self, result: MathEvaluationResult, request: DetectErrorRequest) -> DetectErrorResponse:
+    def _convert_workflow_result_to_response(
+        self, 
+        result: MathEvaluationResult, 
+        request: DetectErrorRequest,
+        cumulative_bbox=None,
+        session_stats=None
+    ) -> DetectErrorResponse:
         """Convert workflow result to API response format."""
         
         # Extract error information from the result
@@ -175,6 +249,17 @@ class DetectErrorService:
         question_has_diagram = "diagram" in question_analysis.get("problem_text", "").lower()
         solution_has_diagram = "diagram" in " ".join(solution_steps).lower()
         
+        # Prepare cumulative bounding box data
+        cumulative_bbox_data = None
+        if cumulative_bbox:
+            cumulative_bbox_data = {
+                "union_bounds": cumulative_bbox.get_union_box(),
+                "center_point": cumulative_bbox.get_center_point(),
+                "total_attempts": cumulative_bbox.total_attempts,
+                "last_updated": cumulative_bbox.last_updated.isoformat(),
+                "individual_boxes_count": len(cumulative_bbox.individual_boxes)
+            }
+        
         return DetectErrorResponse(
             job_id=result.workflow_id,
             y=y_coordinate,
@@ -187,7 +272,10 @@ class DetectErrorService:
             solution_has_diagram=solution_has_diagram,
             llm_used=True,  # Always true since we use LLM for analysis
             solution_lines=solution_steps,
-            llm_ocr_lines=llm_ocr_lines
+            llm_ocr_lines=llm_ocr_lines,
+            cumulative_bounding_box=cumulative_bbox_data,
+            session_stats=session_stats,
+            total_attempts=cumulative_bbox.total_attempts if cumulative_bbox else 1
         )
 
     def get_app(self) -> FastAPI:

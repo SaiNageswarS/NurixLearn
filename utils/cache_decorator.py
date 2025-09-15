@@ -112,10 +112,51 @@ def generate_request_cache_key(*args, **kwargs) -> str:
         return api_cache._generate_key(*args, **kwargs)
     
     # Create a key based on question and solution URLs
+    # IMPORTANT: Include socket_id for session-specific caching
+    # since cumulative bounding box data is session-specific
     key_data = {
+        'socket_id': request.socket_id,  
         'question_url': request.question_url,
         'solution_url': request.solution_url,
         'bounding_box': request.bounding_box,
+        'user_id': request.user_id,
+        'question_attempt_id': request.question_attempt_id
+    }
+    
+    key_string = json.dumps(key_data, sort_keys=True, default=str)
+    return hashlib.md5(key_string.encode()).hexdigest()
+
+
+def generate_cumulative_aware_cache_key(*args, **kwargs) -> str:
+    """
+    Generate a cache key that accounts for cumulative bounding box state.
+    
+    This function creates a cache key that includes the current attempt number
+    to ensure proper cache invalidation when cumulative data changes.
+    """
+    # Extract request data from kwargs (assuming the request is in kwargs)
+    request = None
+    for arg in args:
+        if hasattr(arg, 'question_url') and hasattr(arg, 'solution_url'):
+            request = arg
+            break
+    
+    if not request:
+        # Fallback to default key generation
+        return api_cache._generate_key(*args, **kwargs)
+    
+    # For cumulative bounding box tracking, we need to consider:
+    # 1. Session-specific data (socket_id)
+    # 2. Question-specific data (question_url)
+    # 3. Current bounding box (for this specific attempt)
+    # 4. Solution URL (may change between attempts)
+    # 5. User context (user_id, question_attempt_id)
+    
+    key_data = {
+        'socket_id': request.socket_id,
+        'question_url': request.question_url,
+        'solution_url': request.solution_url,
+        'bounding_box': request.bounding_box,  # Current attempt's bounding box
         'user_id': request.user_id,
         'question_attempt_id': request.question_attempt_id
     }
