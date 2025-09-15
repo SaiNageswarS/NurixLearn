@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from models.data_models import MathEvaluationInput, BoundingBox, MathEvaluationResult
 from jobs.workflow import DetectErrorWorkflow
 from utils.database import database
+from utils.cache_decorator import cache_response, generate_request_cache_key, api_cache
 
 
 class DetectErrorRequest(BaseModel):
@@ -54,6 +55,7 @@ class DetectErrorService:
         """Set up API routes."""
         
         @self.app.post("/detect-error", response_model=DetectErrorResponse)
+        @cache_response(ttl=3600, key_func=generate_request_cache_key)  # 1 hour cache
         async def detect_error(request: DetectErrorRequest):
             """Detect errors in handwritten mathematical solutions."""
             try:
@@ -61,13 +63,18 @@ class DetectErrorService:
                 if not self._initialized:
                     await self._initialize_services()
                 
+                # Extract image names from URLs
+                question_image = self._extract_image_name_from_url(request.question_url)
+                answer_image = self._extract_image_name_from_url(request.solution_url)
+                
                 # Convert bounding box format
                 bounding_box = self._convert_bounding_box(request.bounding_box)
                 
                 # Create workflow input
                 workflow_input = MathEvaluationInput(
-                    question_image_url=request.question_url,
-                    working_note_url=request.solution_url,
+                    container_name="default",  # We'll need to extract this from URL or use default
+                    question_image=question_image,
+                    working_note_image=answer_image,
                     bounding_box=bounding_box,
                     student_id=request.user_id,
                     assignment_id=request.question_attempt_id,
@@ -96,8 +103,23 @@ class DetectErrorService:
                 "status": "healthy",
                 "mongodb_connected": database.mongodb_client is not None,
                 "redis_connected": database.redis_client is not None,
-                "workflow_type": "local_asyncio"
+                "workflow_type": "local_asyncio",
+                "cache_size": api_cache.size()
             }
+
+        @self.app.get("/cache/stats")
+        async def cache_stats():
+            """Get cache statistics."""
+            return {
+                "cache_size": api_cache.size(),
+                "cache_entries": list(api_cache.cache.keys())[:10]  # Show first 10 keys
+            }
+
+        @self.app.post("/cache/clear")
+        async def clear_cache():
+            """Clear the API cache."""
+            api_cache.clear()
+            return {"message": "Cache cleared successfully", "cache_size": api_cache.size()}
 
     async def _initialize_services(self):
         """Initialize required services."""
@@ -110,6 +132,13 @@ class DetectErrorService:
             print(f"❌ Failed to initialize API services: {e}")
             raise
 
+    def _extract_image_name_from_url(self, url: str) -> str:
+        """Extract image name from URL."""
+        # Handle different URL formats
+        if "/" in url:
+            return url.split("/")[-1]  # Get the last part after the last slash
+        return url
+    
     def _convert_bounding_box(self, bbox_dict: Dict[str, float]) -> BoundingBox:
         """Convert API bounding box format to internal format."""
         # Convert from minX, maxX, minY, maxY to x, y, width, height
@@ -119,7 +148,6 @@ class DetectErrorService:
         height = int(bbox_dict["maxY"] - bbox_dict["minY"])
         
         return BoundingBox(x=x, y=y, width=width, height=height)
-
 
     def _convert_workflow_result_to_response(self, result: MathEvaluationResult, request: DetectErrorRequest) -> DetectErrorResponse:
         """Convert workflow result to API response format."""
@@ -151,8 +179,8 @@ class DetectErrorService:
             job_id=result.workflow_id,
             y=y_coordinate,
             error=primary_error.get("description", "No specific error identified"),
-            correction=primary_error.get("correction", result.feedback),
-            hint=primary_error.get("hint", "Review your calculations step by step"),
+            correction=primary_error.get("correction_hint", primary_error.get("correction", result.feedback)),
+            hint=primary_error.get("next_steps", primary_error.get("hint", "Review your calculations step by step")),
             solution_complete=solution_complete,
             contains_diagram=contains_diagram,
             question_has_diagram=question_has_diagram,

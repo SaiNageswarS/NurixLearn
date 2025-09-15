@@ -52,12 +52,12 @@ class MathEvaluationInput(BaseModel):
     @property
     def question_image_url(self) -> str:
         """Backward compatibility: return question image as URL-like string."""
-        return f"{self.question_container}/{self.question_image}"
+        return f"{self.container_name}/{self.question_image}"
     
     @property
     def working_note_url(self) -> str:
         """Backward compatibility: return working note image as URL-like string."""
-        return f"{self.working_note_container}/{self.working_note_image}"
+        return f"{self.container_name}/{self.working_note_image}"
 
 
 class MathEvaluationResult(BaseModel):

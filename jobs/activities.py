@@ -4,6 +4,7 @@ import asyncio
 import os
 import tempfile
 import base64
+import json
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
 import cv2
@@ -167,64 +168,135 @@ async def _encode_image_to_base64(image_path: str) -> str:
 
 async def _analyze_with_openai(question_b64: str, working_note_b64: str) -> Dict[str, Any]:
     """Analyze images using OpenAI GPT-4V."""
+    import json
+    
     client = openai.OpenAI(api_key=settings.openai_api_key)
     
     prompt = """
-    Analyze these two images:
+    You are a helpful math tutor analyzing a student's handwritten solution to a mathematical problem. Your role is to:
 
+    1. Identify any errors in the student's work
+    2. Provide clear, encouraging feedback
+    3. Guide the student on how to correct mistakes and proceed
+
+    Analyze these two images:
     1. QUESTION IMAGE: A printed mathematical problem
     2. WORKING NOTE IMAGE: Student's handwritten solution
 
-    Please provide a comprehensive analysis in the following JSON format:
+    Provide your analysis in the following JSON format:
     {
         "question_analysis": {
-            "problem_text": "Extracted problem text",
-            "problem_type": "Type of mathematical problem",
-            "expected_solution_method": "Expected approach to solve"
+            "problem_text": "Extracted problem text from the question image",
+            "problem_type": "Type of mathematical problem (e.g., algebra, geometry, calculus)",
+            "expected_solution_method": "Expected approach to solve this problem"
         },
         "working_note_analysis": {
-            "solution_steps": ["Step 1", "Step 2", ...],
+            "solution_steps": ["Step 1: Description", "Step 2: Description", ...],
             "mathematical_operations": ["Operation 1", "Operation 2", ...],
             "final_answer": "Student's final answer"
         },
         "correctness_score": 85.5,
         "errors_found": [
             {
-                "step": "Step number or description",
-                "error_type": "Type of error",
-                "description": "Description of the error",
-                "severity": "high/medium/low"
+                "step": "Step number or description where error occurs",
+                "error_type": "Type of error (e.g., calculation error, method error, conceptual error)",
+                "description": "Clear description of what went wrong",
+                "severity": "high/medium/low",
+                "correction_hint": "Specific hint on how to fix this error",
+                "next_steps": "What the student should do next"
             }
         ],
-        "feedback": "Detailed feedback for the student"
+        "feedback": "Encouraging, instructional feedback that: 1) Acknowledges what the student did well, 2) Clearly explains any errors, 3) Provides specific guidance on how to proceed, 4) Encourages the student to continue learning"
     }
+
+    Guidelines for feedback:
+    - Be encouraging and supportive
+    - Focus on learning and improvement, not just pointing out mistakes
+    - Provide specific, actionable advice
+    - Use clear, student-friendly language
+    - If there are errors, explain WHY they occurred and HOW to fix them
+    - If the solution is correct, acknowledge the good work and suggest extensions or related problems
+
+    IMPORTANT: Respond ONLY with valid JSON. Do not include any text before or after the JSON.
     """
     
-    response = client.chat.completions.create(
-        model="gpt-4.1",
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",  # Use correct vision model
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{question_b64}"}
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{working_note_b64}"}
+                        }
+                    ]
+                }
+            ],
+            max_tokens=2000,
+            temperature=0.1  # Lower temperature for more consistent JSON output
+        )
+        
+        # Get response content
+        analysis_text = response.choices[0].message.content
+        
+        if not analysis_text:
+            raise ValueError("Empty response from OpenAI")
+        
+        print(f"🔍 Raw LLM response: {analysis_text[:200]}...")  # Debug logging
+        
+        # Clean the response - remove any markdown formatting
+        analysis_text = analysis_text.strip()
+        if analysis_text.startswith("```json"):
+            analysis_text = analysis_text[7:]
+        if analysis_text.endswith("```"):
+            analysis_text = analysis_text[:-3]
+        analysis_text = analysis_text.strip()
+        
+        # Parse JSON
+        try:
+            result = json.loads(analysis_text)
+            print("✅ Successfully parsed LLM response as JSON")
+            return result
+        except json.JSONDecodeError as e:
+            print(f"❌ JSON parsing failed: {e}")
+            print(f"🔍 Cleaned response: {analysis_text}")
+            
+            # Return a fallback response with instructional structure
+            return {
+                "question_analysis": {
+                    "problem_text": "Unable to extract problem text",
+                    "problem_type": "Unknown",
+                    "expected_solution_method": "Unable to determine"
+                },
+                "working_note_analysis": {
+                    "solution_steps": ["Unable to analyze steps"],
+                    "mathematical_operations": ["Unable to identify operations"],
+                    "final_answer": "Unable to extract final answer"
+                },
+                "correctness_score": 0.0,
+                "errors_found": [
                     {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{question_b64}"}
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{working_note_b64}"}
+                        "step": "Analysis failed",
+                        "error_type": "Technical error",
+                        "description": f"Unable to analyze the solution due to technical issues: {str(e)}",
+                        "severity": "high",
+                        "correction_hint": "Please try submitting your solution again. If the problem persists, contact support.",
+                        "next_steps": "Resubmit your solution or try a different approach to the problem."
                     }
-                ]
+                ],
+                "feedback": "I'm sorry, but I encountered a technical issue while analyzing your solution. Please try submitting your work again, and I'll be happy to help you identify any errors and guide you through the correct approach."
             }
-        ],
-        max_tokens=2000
-    )
-    
-    # Parse response
-    import json
-    analysis_text = response.choices[0].message.content
-    return json.loads(analysis_text)
+            
+    except Exception as e:
+        print(f"❌ OpenAI API call failed: {e}")
+        raise
 
 
 @task(max_retries=2, retry_delay=1.0, timeout=120)
@@ -256,58 +328,6 @@ async def validate_result(analysis_result: Dict[str, Any]) -> Dict[str, Any]:
     
     print("✅ Analysis result validated successfully")
     return analysis_result
-
-
-@task(max_retries=3, retry_delay=1.0, timeout=120)
-async def save_evaluation_result(
-    analysis_result: Dict[str, Any], 
-    workflow_id: str,
-    student_id: Optional[str] = None,
-    assignment_id: Optional[str] = None,
-    question_image_url: str = "",
-    working_note_url: str = ""
-) -> str:
-    """Save evaluation result to database."""
-    print("💾 Saving evaluation result to database")
-    
-    # Generate evaluation ID
-    evaluation_id = f"eval_{workflow_id}_{int(datetime.now().timestamp())}"
-    
-    # Create evaluation log
-    evaluation_log = MathEvaluationLog(
-        evaluation_id=evaluation_id,
-        student_id=student_id,
-        assignment_id=assignment_id,
-        question_image_url=question_image_url,
-        working_note_url=working_note_url,
-        correctness_score=analysis_result.get('correctness_score', 0.0),
-        errors_found=analysis_result.get('errors_found', []),
-        feedback=analysis_result.get('feedback', ''),
-        workflow_id=workflow_id,
-        metadata=analysis_result
-    )
-    
-    # Save to MongoDB
-    collection = await database.get_mongodb_collection("math_evaluations")
-    result = await collection.insert_one(evaluation_log.dict(by_alias=True))
-    evaluation_log.id = result.inserted_id
-    
-    # Cache in Redis
-    await _cache_evaluation_result(evaluation_log)
-    
-    print(f"✅ Saved evaluation result with ID: {evaluation_id}")
-    return evaluation_id
-
-
-async def _cache_evaluation_result(evaluation_log: MathEvaluationLog):
-    """Cache evaluation result in Redis."""
-    redis_client = await database.get_redis_client()
-    cache_key = f"math_evaluation:{evaluation_log.evaluation_id}"
-    await redis_client.setex(
-        cache_key,
-        3600,  # 1 hour TTL
-        evaluation_log.json()
-    )
 
 
 @task(max_retries=1, retry_delay=0.5, timeout=60)

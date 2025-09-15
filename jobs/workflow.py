@@ -5,6 +5,7 @@ import os
 import tempfile
 from datetime import datetime
 from typing import Dict, Any
+import uuid
 
 from models.data_models import MathEvaluationInput, MathEvaluationResult
 from jobs.activities import (
@@ -13,7 +14,6 @@ from jobs.activities import (
     preprocess_images,
     analyze_with_llm,
     validate_result,
-    save_evaluation_result,
     cleanup_temp_files
 )
 
@@ -72,24 +72,13 @@ class DetectErrorWorkflow:
             print("✅ Step 5: Validating result...")
             validated_result = await validate_result(analysis_result)
             
-            # Step 6: Save evaluation result
-            print("💾 Step 6: Saving evaluation result...")
-            evaluation_id = await save_evaluation_result(
-                validated_result,
-                workflow_id,
-                input_data.student_id,
-                input_data.assignment_id,
-                input_data.question_image_url,
-                input_data.working_note_url
-            )
-            
             # Update result with analysis data
             result.question_analysis = validated_result.get('question_analysis', {})
             result.working_note_analysis = validated_result.get('working_note_analysis', {})
             result.correctness_score = validated_result.get('correctness_score', 0.0)
             result.errors_found = validated_result.get('errors_found', [])
             result.feedback = validated_result.get('feedback', '')
-            result.evaluation_id = evaluation_id
+            result.evaluation_id = uuid.uuid4()
             result.status = "completed"
             result.completed_at = datetime.utcnow()
             
