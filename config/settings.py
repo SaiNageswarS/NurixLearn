@@ -15,15 +15,13 @@ class Settings(BaseSettings):
     # Redis Configuration
     redis_url: str = Field(default="redis://localhost:6379", env="REDIS_URL")
     redis_db: int = Field(default=0, env="REDIS_DB")
-    
-    # Temporal Configuration
-    temporal_host: str = Field(default="localhost:7233", env="TEMPORAL_HOST")
-    temporal_namespace: str = Field(default="default", env="TEMPORAL_NAMESPACE")
-    temporal_task_queue: str = Field(default="math-evaluation-queue", env="TEMPORAL_TASK_QUEUE")
-    
+        
     # Azure Configuration
-    azure_storage_connection_string: str = Field(default="", env="AZURE_STORAGE_CONNECTION_STRING")
     azure_storage_container: str = Field(default="math-images", env="AZURE_STORAGE_CONTAINER")
+    azure_client_id: str = Field(default="", env="AZURE_CLIENT_ID")
+    azure_tenant_id: str = Field(default="", env="AZURE_TENANT_ID")
+    azure_client_secret: str = Field(default="", env="AZURE_CLIENT_SECRET")
+    azure_storage_account_name: str = Field(default="", env="AZURE_STORAGE_ACCOUNT_NAME")
     
     # LLM Configuration
     openai_api_key: str = Field(default="", env="OPENAI_API_KEY")

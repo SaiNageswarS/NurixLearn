@@ -1,52 +1,77 @@
-"""Main entry point for the Temporal worker."""
+"""Main entry point for the FastAPI server."""
 
 import asyncio
 import signal
 import sys
-from temporalio.worker import Worker
+import uvicorn
 
 from config.settings import settings
 from utils.database import database
-from utils.temporal_client import temporal_manager
-from jobs.workflows import DetectErrorWorkflow
-from jobs.activities import MathEvaluationActivities
+from services.detect_error_service import api_service
 
 
-async def main():
-    """Main worker function."""
-    print("🚀 Starting Temporal worker for math evaluation...")
+async def initialize_services():
+    """Initialize required services."""
+    print("🚀 Initializing services...")
     
     try:
         # Connect to databases
         await database.connect_to_mongodb()
         await database.connect_to_redis()
+        print("✅ Services initialized successfully")
         
-        # Connect to Temporal
-        await temporal_manager.connect()
+    except Exception as e:
+        print(f"❌ Failed to initialize services: {e}")
+        raise
+
+
+def run_fastapi_server():
+    """Run the FastAPI server."""
+    print("🌐 Starting FastAPI server...")
+    
+    app = api_service.get_app()
+    
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=8000,
+        log_level="info"
+    )
+
+
+async def main():
+    """Main function to run the FastAPI server."""
+    print("🚀 Starting Math Evaluation Service...")
+    
+    try:
+        # Initialize services
+        await initialize_services()
         
-        # Create activities instance
-        activities = MathEvaluationActivities()
-        
-        # Start worker
-        await temporal_manager.start_worker(
-            activities=[activities],
-            workflows=[DetectErrorWorkflow]
-        )
+        # Run the FastAPI server
+        run_fastapi_server()
         
     except KeyboardInterrupt:
-        print("🛑 Worker interrupted by user")
+        print("🛑 Shutting down...")
     except Exception as e:
-        print(f"❌ Worker failed: {e}")
+        print(f"❌ Service failed: {e}")
         raise
     finally:
         # Cleanup
         await database.close_mongodb_connection()
         await database.close_redis_connection()
-        await temporal_manager.disconnect()
-        print("✅ Worker shut down successfully")
+        print("✅ Service shut down successfully")
 
 
-if __name__ == "__main__":   
-    # Run the worker
+def signal_handler(signum, frame):
+    """Handle shutdown signals."""
+    print(f"\n🛑 Received signal {signum}, shutting down...")
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    # Set up signal handlers
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
+    # Run the service
     asyncio.run(main())
-

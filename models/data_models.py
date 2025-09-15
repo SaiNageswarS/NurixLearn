@@ -111,13 +111,28 @@ class BoundingBox(BaseModel):
 
 class MathEvaluationInput(BaseModel):
     """Input for math evaluation workflow."""
-    question_image_url: str = Field(..., description="URL of the printed question image")
-    working_note_url: str = Field(..., description="URL of the handwritten working note image")
+    # Question image details
+    container_name: str = Field(..., description="Container name for the images")
+    
+    question_image: str = Field(..., description="Image name for the printed question") 
+    working_note_image: str = Field(..., description="Image name for the handwritten working note")
+    # Optional fields
     bounding_box: Optional[BoundingBox] = Field(None, description="Bounding box to crop the working note")
     student_id: Optional[str] = Field(None, description="Student identifier")
     assignment_id: Optional[str] = Field(None, description="Assignment identifier")
     evaluation_criteria: Dict[str, Any] = Field(default_factory=dict, description="Custom evaluation criteria")
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    
+    # Backward compatibility properties
+    @property
+    def question_image_url(self) -> str:
+        """Backward compatibility: return question image as URL-like string."""
+        return f"{self.question_container}/{self.question_image}"
+    
+    @property
+    def working_note_url(self) -> str:
+        """Backward compatibility: return working note image as URL-like string."""
+        return f"{self.working_note_container}/{self.working_note_image}"
 
 
 class MathEvaluationResult(BaseModel):
