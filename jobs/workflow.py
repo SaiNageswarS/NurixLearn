@@ -14,8 +14,10 @@ from jobs.activities import (
     preprocess_images,
     analyze_with_llm,
     validate_result,
-    cleanup_temp_files
+    cleanup_temp_files,
+    save_to_mongodb
 )
+from config.settings import settings
 
 
 class DetectErrorWorkflow:
@@ -29,7 +31,8 @@ class DetectErrorWorkflow:
         
         result = MathEvaluationResult(
             workflow_id=workflow_id,
-            status="started"
+            status="started",
+            metadata={}
         )
         
         temp_files = []
@@ -82,6 +85,17 @@ class DetectErrorWorkflow:
             result.status = "completed"
             result.completed_at = datetime.utcnow()
             
+            # Step 6: Save to MongoDB
+            print("💾 Step 6: Saving analysis results to MongoDB...")
+            try:
+                document_id = await save_to_mongodb(result, input_data)
+                result.metadata['mongodb_document_id'] = document_id
+                print(f"✅ Analysis results saved to MongoDB with ID: {document_id}")
+            except Exception as e:
+                print(f"⚠️ Failed to save to MongoDB: {e}")
+                # Don't fail the workflow if MongoDB save fails
+                result.metadata['mongodb_save_error'] = str(e)
+            
             print(f"✅ Math evaluation workflow completed successfully")
             print(f"📊 Correctness Score: {result.correctness_score}")
             print(f"🔍 Errors Found: {len(result.errors_found)}")
@@ -94,10 +108,14 @@ class DetectErrorWorkflow:
             raise
         
         finally:
-            # Cleanup temporary files
-            if temp_files:
-                print("Cleaning up temporary files...")
+            # Cleanup temporary files based on settings
+            if temp_files and settings.cleanup_files:
+                print("🧹 Cleaning up temporary files...")
                 await cleanup_temp_files(*temp_files)
+            elif temp_files and not settings.cleanup_files:
+                print("📁 Keeping temporary files (cleanup_files=False):")
+                for file_path in temp_files:
+                    print(f"  - {file_path}")
         
         return result
 

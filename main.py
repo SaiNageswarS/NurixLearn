@@ -29,18 +29,20 @@ async def initialize_services():
         raise
 
 
-def run_fastapi_server():
+async def run_fastapi_server():
     """Run the FastAPI server."""
     print("🌐 Starting FastAPI server...")
     
     app = api_service.get_app()
     
-    uvicorn.run(
+    config = uvicorn.Config(
         app,
         host="0.0.0.0",
         port=8000,
         log_level="info"
     )
+    server = uvicorn.Server(config)
+    await server.serve()
 
 
 async def run_workflow_directly(args):
@@ -156,7 +158,7 @@ async def main():
             await initialize_services()
             
             # Run the FastAPI server
-            run_fastapi_server()
+            await run_fastapi_server()
             
         except KeyboardInterrupt:
             print("🛑 Shutting down...")

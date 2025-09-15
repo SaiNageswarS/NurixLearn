@@ -60,13 +60,13 @@ class Database:
 
     async def get_mongodb_collection(self, collection_name: str):
         """Get a MongoDB collection."""
-        if not self.mongodb_database:
+        if self.mongodb_database is None:
             raise RuntimeError("MongoDB not connected")
         return self.mongodb_database[collection_name]
 
     async def get_redis_client(self):
         """Get Redis client."""
-        if not self.redis_client:
+        if self.redis_client is None:
             raise RuntimeError("Redis not connected")
         return self.redis_client
 

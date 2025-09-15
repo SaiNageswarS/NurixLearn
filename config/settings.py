@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     # Application Configuration
     app_name: str = Field(default="MathEvaluationApp", env="APP_NAME")
     debug: bool = Field(default=True, env="DEBUG")
+    cleanup_files: bool = Field(default=True, env="CLEANUP_FILES")
     
     class Config:
         env_file = ".env"

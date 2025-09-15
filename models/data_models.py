@@ -72,6 +72,7 @@ class MathEvaluationResult(BaseModel):
     started_at: datetime = Field(default_factory=datetime.utcnow)
     completed_at: Optional[datetime] = None
     evaluation_id: Optional[str] = Field(None, description="Saved evaluation ID")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
 
 
 class MathEvaluationLog(BaseModel):

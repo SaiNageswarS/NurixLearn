@@ -13,7 +13,7 @@ from PIL import Image
 import openai
 from anthropic import Anthropic
 
-from models.data_models import MathEvaluationLog, MathEvaluationResult, BoundingBox
+from models.data_models import MathEvaluationLog, MathEvaluationResult, MathEvaluationInput, BoundingBox
 from utils.database import database
 from utils.storage import LocalStorageManager, StorageManager
 from config.settings import settings
@@ -342,3 +342,76 @@ async def cleanup_temp_files(*file_paths: str):
                 print(f"✅ Cleaned up: {file_path}")
         except Exception as e:
             print(f"⚠️ Failed to clean up {file_path}: {e}")
+
+
+@task(max_retries=2, retry_delay=1.0, timeout=30)
+async def save_to_mongodb(
+    result: MathEvaluationResult,
+    input_data: MathEvaluationInput
+) -> str:
+    """Save analysis results to MongoDB implicitattempts collection."""
+    from utils.database import database
+    from datetime import datetime
+    import uuid
+    
+    try:
+        # Ensure MongoDB is connected
+        if database.mongodb_database is None:
+            await database.connect_to_mongodb()
+        
+        # Get the implicitattempts collection
+        collection = await database.get_mongodb_collection("implicitattempts")
+        
+        # Create document with all required fields
+        document = {
+            # Analysis results
+            "question_analysis": result.question_analysis,
+            "working_note_analysis": result.working_note_analysis,
+            "correctness_score": result.correctness_score,
+            "errors_found": result.errors_found,
+            "feedback": result.feedback,
+            
+            # Metadata
+            "workflow_id": result.workflow_id,
+            "evaluation_id": str(result.evaluation_id) if result.evaluation_id else str(uuid.uuid4()),
+            "status": result.status,
+            
+            # Timestamps in milliseconds
+            "createdAt": int(datetime.utcnow().timestamp() * 1000),
+            "updatedAt": int(datetime.utcnow().timestamp() * 1000),
+            
+            # Processing flags
+            "llm_used": True,  # Always true since we use LLM for analysis
+            "diagram_detection": {
+                "contains_diagram": "diagram" in result.feedback.lower() or "graph" in result.feedback.lower(),
+                "question_has_diagram": "diagram" in result.question_analysis.get("problem_text", "").lower(),
+                "solution_has_diagram": "diagram" in " ".join(result.working_note_analysis.get("solution_steps", [])).lower()
+            },
+            
+            # Original request data
+            "original_request": {
+                "container_name": input_data.container_name,
+                "question_image": input_data.question_image,
+                "working_note_image": input_data.working_note_image,
+                "bounding_box": input_data.bounding_box.dict() if input_data.bounding_box else None,
+                "student_id": input_data.student_id,
+                "assignment_id": input_data.assignment_id,
+                "evaluation_criteria": input_data.evaluation_criteria,
+                "metadata": input_data.metadata
+            },
+            
+            # Workflow timestamps
+            "started_at": result.started_at,
+            "completed_at": result.completed_at
+        }
+        
+        # Insert document into MongoDB
+        insert_result = await collection.insert_one(document)
+        document_id = str(insert_result.inserted_id)
+        
+        print(f"✅ Saved analysis results to MongoDB with ID: {document_id}")
+        return document_id
+        
+    except Exception as e:
+        print(f"❌ Failed to save to MongoDB: {e}")
+        raise

@@ -105,7 +105,7 @@ class DetectErrorService:
                 
                 # Create workflow input
                 workflow_input = MathEvaluationInput(
-                    container_name="default",  # We'll need to extract this from URL or use default
+                    container_name="mock_data",  # default container name. Can be extracted from URL
                     question_image=question_image,
                     working_note_image=answer_image,
                     bounding_box=bounding_box,
@@ -137,10 +137,28 @@ class DetectErrorService:
         @self.app.get("/health")
         async def health_check():
             """Health check endpoint."""
+            # Check database connections safely
+            mongodb_connected = False
+            redis_connected = False
+            
+            try:
+                if database.mongodb_client is not None:
+                    await database.mongodb_client.admin.command('ping')
+                    mongodb_connected = True
+            except:
+                mongodb_connected = False
+            
+            try:
+                if database.redis_client is not None:
+                    await database.redis_client.ping()
+                    redis_connected = True
+            except:
+                redis_connected = False
+            
             return {
                 "status": "healthy",
-                "mongodb_connected": database.mongodb_client is not None,
-                "redis_connected": database.redis_client is not None,
+                "mongodb_connected": mongodb_connected,
+                "redis_connected": redis_connected,
                 "workflow_type": "local_asyncio",
                 "cache_size": api_cache.size()
             }
