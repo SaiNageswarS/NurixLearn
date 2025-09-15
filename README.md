@@ -1,48 +1,126 @@
-# Python MongoDB + Redis + Temporal Project
+# NurixLearn - Math Solution Evaluation Application
 
-A modern Python application that integrates MongoDB, Redis, and Temporal for robust error detection and workflow management using Pydantic models.
+An application to evaluate a hand-written math solution against a given problem using AI-powered analysis.
+
+## Introduction
+
+NurixLearn is a Python application that analyzes hand-written mathematical solutions by comparing them against given problems. The application uses AI to evaluate correctness, identify errors, and provide detailed feedback on student work. It can process images of both the original problem and the student's handwritten solution to provide comprehensive evaluation results.
 
 ## Features
 
-- **MongoDB Integration**: Async MongoDB operations using Motor
-- **Redis Integration**: Async Redis operations for caching
-- **Temporal Workflows**: Robust workflow orchestration for error detection
-- **Pydantic Models**: Type-safe data validation and serialization
-- **FastAPI**: Modern web framework with automatic API documentation
-- **Configuration Management**: Environment-based configuration using Pydantic Settings
-- **Caching Layer**: Automatic Redis caching for improved performance
-- **Error Detection Workflows**: Automated error detection and management
+- **AI-Powered Math Evaluation**: Uses advanced AI models to analyze mathematical solutions
+- **Image Processing**: Handles both printed problem images and handwritten solution images
+- **Error Detection**: Identifies specific errors and provides detailed feedback
+- **Flexible Storage**: Supports both local filesystem and Azure Blob Storage
+- **Dual Operation Modes**: Can run as a workflow or API service
+- **Bounding Box Support**: Allows focusing on specific regions of images
+- **Comprehensive Results**: Provides correctness scores, error analysis, and detailed feedback
 
-## Project Structure
+## Operation Modes
 
+The application can be run in two different modes:
+
+### 1. Workflow Mode
+Direct execution of the math evaluation workflow with command-line arguments.
+
+### 2. API Service Mode
+Runs as a FastAPI server providing REST endpoints for math evaluation.
+
+## Usage
+
+### Workflow Mode
+
+Run the application directly with command-line arguments to process a single math evaluation:
+
+```bash
+python main.py --mode workflow --container-name mock_data --question-image Q1.jpeg --working-note-image Attempt1.jpeg --student-id student123 --assignment-id assignment456
 ```
-├── main.py                      # FastAPI application with REST endpoints
-├── worker.py                    # Temporal worker for running workflows
-├── config/
-│   ├── __init__.py
-│   └── settings.py              # Configuration management
-├── models/
-│   ├── __init__.py
-│   └── data_models.py           # Pydantic models for data validation
-├── utils/
-│   ├── __init__.py
-│   ├── database.py              # Database connection management
-│   └── temporal_client.py       # Temporal client management
-├── services/
-│   ├── __init__.py
-│   ├── data_service.py          # Business logic layer
-│   └── workflow_service.py      # Workflow management service
-├── jobs/
-│   ├── __init__.py
-│   ├── workflows.py             # Temporal workflows
-│   └── activities.py            # Temporal activities
-├── tests/
-│   └── __init__.py
-├── requirements.txt             # Python dependencies
-├── env.example                  # Environment variables template
-├── example_workflow_usage.py    # Example workflow usage
-└── README.md                   # This file
+
+#### Required Parameters:
+- `--container-name`: Container/folder name containing the images
+- `--question-image`: Image filename for the printed question
+- `--working-note-image`: Image filename for the handwritten working note
+
+#### Optional Parameters:
+- `--student-id`: Student identifier for tracking
+- `--assignment-id`: Assignment identifier for tracking
+- `--bbox-x`: X coordinate of bounding box top-left corner (for focusing on specific image regions)
+- `--bbox-y`: Y coordinate of bounding box top-left corner
+- `--bbox-width`: Width of the bounding box
+- `--bbox-height`: Height of the bounding box
+
+#### Example with Bounding Box:
+```bash
+python main.py --mode workflow --container-name mock_data --question-image Q1.jpeg --working-note-image Attempt1.jpeg --student-id student123 --assignment-id assignment456 --bbox-x 100 --bbox-y 50 --bbox-width 200 --bbox-height 150
 ```
+
+### API Service Mode
+
+Run the application as a FastAPI server:
+
+```bash
+python main.py --mode server
+```
+
+The API will be available at `http://localhost:8000`
+
+- **API Documentation**: `http://localhost:8000/docs`
+- **Health Check**: `http://localhost:8000/health`
+
+#### API Endpoints:
+- `POST /evaluate` - Evaluate a math solution
+- `GET /health` - Application health status
+- `GET /evaluations/{evaluation_id}` - Get evaluation result by ID
+
+## Storage Managers
+
+The application supports two storage backends for handling images:
+
+### LocalStorageManager
+
+Uses the local filesystem where `container_name` is treated as a folder name.
+
+**Configuration:**
+- Images are stored in: `{base_path}/{container_name}/{image_name}`
+- Default base path is the current directory
+- Supports common image formats: JPG, PNG, GIF, BMP, WebP
+
+**Testing Setup:**
+1. Create a folder structure:
+   ```bash
+   mkdir -p mock_data
+   cp your_question_image.jpg mock_data/Q1.jpeg
+   cp your_solution_image.jpg mock_data/Attempt1.jpeg
+   ```
+
+2. Run with local storage:
+   ```bash
+   python main.py --mode workflow --container-name mock_data --question-image Q1.jpeg --working-note-image Attempt1.jpeg
+   ```
+
+### AzureStorageManager
+
+Uses Azure Blob Storage with service principal authentication.
+
+**Configuration:**
+Set the following environment variables:
+```env
+AZURE_CLIENT_ID=your_client_id
+AZURE_TENANT_ID=your_tenant_id
+AZURE_CLIENT_SECRET=your_client_secret
+AZURE_STORAGE_ACCOUNT_NAME=your_storage_account
+```
+
+**Testing Setup:**
+1. Create an Azure Storage Account
+2. Create a container (e.g., "math-images")
+3. Upload your images to the container
+4. Set up a service principal with Blob Storage permissions
+5. Configure the environment variables
+6. Run the application:
+   ```bash
+   python main.py --mode workflow --container-name math-images --question-image Q1.jpeg --working-note-image Attempt1.jpeg
+   ```
 
 ## Setup
 
@@ -60,223 +138,78 @@ Copy the example environment file and configure your settings:
 cp env.example .env
 ```
 
-Edit `.env` with your MongoDB, Redis, and Temporal connection details:
+Edit `.env` with your configuration:
 
 ```env
-# MongoDB Configuration
+# MongoDB Configuration (optional for basic usage)
 MONGODB_URL=mongodb://localhost:27017
 MONGODB_DATABASE=myapp
 
-# Redis Configuration
+# Redis Configuration (optional for basic usage)
 REDIS_URL=redis://localhost:6379
 REDIS_DB=0
 
-# Temporal Configuration
-TEMPORAL_HOST=localhost:7233
-TEMPORAL_NAMESPACE=default
-TEMPORAL_TASK_QUEUE=detect-error-queue
+# Azure Configuration (required for AzureStorageManager)
+AZURE_CLIENT_ID=your_client_id
+AZURE_TENANT_ID=your_tenant_id
+AZURE_CLIENT_SECRET=your_client_secret
+AZURE_STORAGE_ACCOUNT_NAME=your_storage_account
+AZURE_STORAGE_CONTAINER=math-images
+
+# LLM Configuration (required for AI evaluation)
+OPENAI_API_KEY=your_openai_api_key
 
 # Application Configuration
-APP_NAME=MyApp
+APP_NAME=MathEvaluationApp
 DEBUG=True
 ```
 
-### 3. Start Services
+### 3. Quick Start with Local Storage
 
-Make sure MongoDB, Redis, and Temporal are running:
+For immediate testing with local files:
 
-```bash
-# Start MongoDB (if using Docker)
-docker run -d -p 27017:27017 --name mongodb mongo:latest
-
-# Start Redis (if using Docker)
-docker run -d -p 6379:6379 --name redis redis:latest
-
-# Start Temporal Server (if using Docker)
-docker run -d -p 7233:7233 --name temporal temporalio/auto-setup:latest
-```
-
-## Usage
-
-### Running the Application
-
-1. **Start the Temporal Worker** (in one terminal):
+1. Create test data:
    ```bash
-   python worker.py
+   mkdir -p mock_data
+   # Add your question and solution images to mock_data/
    ```
 
-2. **Start the FastAPI Application** (in another terminal):
+2. Run evaluation:
    ```bash
-   python main.py
+   python main.py --mode workflow --container-name mock_data --question-image your_question.jpg --working-note-image your_solution.jpg
    ```
 
-The API will be available at `http://localhost:8000`
+## Project Structure
 
-- API Documentation: `http://localhost:8000/docs`
-- Health Check: `http://localhost:8000/health`
-
-### Example Usage
-
-```bash
-python example_workflow_usage.py
 ```
-
-## API Endpoints
-
-### Health Check
-- `GET /health` - Application health status
-
-### Users
-- `POST /users` - Create a new user
-- `GET /users/{user_id}` - Get user by ID
-- `GET /users` - Get all users (with pagination)
-- `PUT /users/{user_id}` - Update user
-- `DELETE /users/{user_id}` - Delete user
-
-### Products
-- `POST /products` - Create a new product
-- `GET /products/{product_id}` - Get product by ID
-- `GET /products` - Get all products (with optional category filter)
-- `PUT /products/{product_id}` - Update product
-- `DELETE /products/{product_id}` - Delete product
-
-### Error Detection Workflows
-- `POST /workflows/detect-error` - Start a new error detection workflow
-- `POST /workflows/monitor-error` - Start a continuous error monitoring workflow
-- `GET /workflows/{workflow_id}/result` - Get workflow result
-- `GET /workflows/{workflow_id}/status` - Get workflow status
-- `POST /workflows/{workflow_id}/resolve-error` - Resolve an error
-- `POST /workflows/{workflow_id}/ignore-error` - Ignore an error
-- `POST /workflows/{workflow_id}/stop-monitoring` - Stop monitoring workflow
-- `GET /workflows` - List active workflows
-- `GET /workflows/{workflow_id}/history` - Get workflow history
-
-### Error Logs
-- `GET /error-logs` - Get error logs with filters
-- `GET /error-logs/{error_log_id}` - Get error log by ID
-- `PUT /error-logs/{error_log_id}/status` - Update error log status
-- `GET /error-logs/statistics` - Get error statistics
-
-## Workflows
-
-### DetectErrorWorkflow
-
-A comprehensive workflow for detecting and managing errors:
-
-1. **Scan Logs**: Scans specified sources for error patterns
-2. **Save Errors**: Stores detected errors in MongoDB
-3. **Analyze Severity**: Categorizes errors by severity level
-4. **Send Notifications**: Notifies users of critical/high severity errors
-5. **Update Status**: Updates error statuses based on analysis
-6. **Generate Report**: Creates comprehensive error reports
-7. **Wait for Resolution**: Waits for user response or auto-resolves after timeout
-
-### ErrorMonitoringWorkflow
-
-A long-running workflow for continuous error monitoring:
-
-- Runs error detection every 5 minutes
-- Automatically processes and notifies on new errors
-- Can be stopped via signal
-
-## Models
-
-### Error Detection Models
-
-```python
-class ErrorDetectionInput(BaseModel):
-    source: str
-    error_patterns: List[str]
-    severity_threshold: ErrorSeverity
-    user_id: Optional[str]
-    metadata: Dict[str, Any]
-
-class ErrorDetectionResult(BaseModel):
-    workflow_id: str
-    errors_detected: int
-    errors_resolved: int
-    status: str
-    started_at: datetime
-    completed_at: Optional[datetime]
-    error_logs: List[str]
+├── main.py                      # Main entry point with CLI and server modes
+├── config/
+│   └── settings.py              # Configuration management
+├── models/
+│   └── data_models.py           # Pydantic models for data validation
+├── utils/
+│   ├── storage.py               # Storage managers (Local & Azure)
+│   └── database.py              # Database connection management
+├── services/
+│   └── detect_error_service.py  # API service implementation
+├── jobs/
+│   ├── workflow.py              # Math evaluation workflow
+│   └── activities.py            # Workflow activities
+├── requirements.txt             # Python dependencies
+├── env.example                  # Environment variables template
+└── README.md                   # This file
 ```
-
-### Error Log Model
-
-```python
-class ErrorLog(BaseModel):
-    id: Optional[PyObjectId]
-    error_id: str
-    message: str
-    stack_trace: Optional[str]
-    severity: ErrorSeverity
-    status: ErrorStatus
-    source: str
-    metadata: Dict[str, Any]
-    user_id: Optional[str]
-    workflow_id: Optional[str]
-    created_at: datetime
-    updated_at: Optional[datetime]
-    resolved_at: Optional[datetime]
-```
-
-## Key Features
-
-### Temporal Workflows
-- **Reliability**: Automatic retries and failure handling
-- **Durability**: Workflow state persisted in Temporal
-- **Scalability**: Can handle high-volume error detection
-- **Observability**: Full workflow history and status tracking
-
-### Caching Strategy
-- **Automatic Caching**: All read operations are cached in Redis
-- **Cache Invalidation**: Updates and deletes automatically invalidate cache
-- **TTL**: Cache entries expire after 1 hour
-
-### Error Handling
-- **Validation Errors**: Pydantic validates all input data
-- **Database Errors**: Proper error handling for MongoDB and Redis operations
-- **Workflow Errors**: Temporal handles workflow failures gracefully
-- **HTTP Errors**: FastAPI provides proper HTTP status codes
-
-### Type Safety
-- **Pydantic Models**: Full type safety with automatic validation
-- **Async/Await**: Modern async Python patterns
-- **Type Hints**: Complete type annotations throughout the codebase
-
-## Development
-
-### Adding New Workflows
-
-1. Define the workflow in `jobs/workflows.py`
-2. Create corresponding activities in `jobs/activities.py`
-3. Add workflow service methods in `services/workflow_service.py`
-4. Add API endpoints in `main.py`
-
-### Adding New Models
-
-1. Define the model in `models/data_models.py`
-2. Create corresponding service methods in `services/data_service.py`
-3. Add API endpoints in `main.py`
-
-### Extending Services
-
-The service layer provides a clean separation between business logic and data access. Each service handles:
-
-- MongoDB operations
-- Redis caching
-- Data validation
-- Error handling
-- Workflow orchestration
 
 ## Dependencies
 
 - **pydantic**: Data validation and settings management
-- **motor**: Async MongoDB driver
-- **redis**: Async Redis client
-- **temporalio**: Temporal Python SDK
-- **fastapi**: Web framework
+- **fastapi**: Web framework for API mode
 - **uvicorn**: ASGI server
+- **azure-storage-blob**: Azure Blob Storage integration
+- **azure-identity**: Azure authentication
+- **openai**: AI model integration for math evaluation
+- **motor**: Async MongoDB driver (optional)
+- **redis**: Async Redis client (optional)
 - **python-dotenv**: Environment variable loading
 
 ## License

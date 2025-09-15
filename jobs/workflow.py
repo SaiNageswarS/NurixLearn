@@ -112,18 +112,3 @@ class DetectErrorWorkflow:
         
         return result
 
-
-if __name__ == "__main__":
-    import asyncio
-    
-    async def main():
-        input_data = MathEvaluationInput(
-            container_name="mock_data",
-            question_image="Q1.jpeg",
-            working_note_image="Attempt1.jpeg"
-        )
-        workflow = DetectErrorWorkflow()
-        result = await workflow.run(input_data)
-        print(result)
-    
-    asyncio.run(main())

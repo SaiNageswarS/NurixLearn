@@ -12,10 +12,9 @@ from PIL import Image
 import openai
 from anthropic import Anthropic
 
-from main import main
 from models.data_models import MathEvaluationLog, MathEvaluationResult, BoundingBox
 from utils.database import database
-from utils.storage import StorageManager, azure_storage
+from utils.storage import LocalStorageManager, StorageManager
 from config.settings import settings
 from utils.task_decorator import task
 
@@ -29,7 +28,7 @@ async def download_problem_images(
 ) -> Tuple[str, str]:
     """Download both question and working note images using the provided storage manager."""
     if storage_manager is None:
-        storage_manager = azure_storage  # Default to Azure storage for backward compatibility
+        storage_manager = LocalStorageManager()  # Default to Azure storage for backward compatibility
     
     print(f"📥 Downloading both images using {storage_manager.__class__.__name__}")
     
@@ -100,7 +99,7 @@ async def preprocess_images(question_image_path: str, working_note_path: str) ->
     # Process working note image
     processed_working_note_path = await _preprocess_single_image(working_note_path, "working_note")
     
-    print("✅ Images preprocessed successfully")
+    print(f"✅ Images preprocessed successfully {processed_question_path} {processed_working_note_path}")
     return processed_question_path, processed_working_note_path
 
 
@@ -153,20 +152,6 @@ async def analyze_with_llm(question_image_path: str, working_note_path: str) -> 
         except Exception as e:
             print(f"⚠️ OpenAI analysis failed: {e}")
     
-    # Try Azure OpenAI if OpenAI failed
-    if not analysis_result and settings.azure_openai_api_key:
-        try:
-            analysis_result = await _analyze_with_azure_openai(question_image_b64, working_note_b64)
-        except Exception as e:
-            print(f"⚠️ Azure OpenAI analysis failed: {e}")
-    
-    # Try Anthropic if others failed
-    if not analysis_result and settings.anthropic_api_key:
-        try:
-            analysis_result = await _analyze_with_anthropic(question_image_b64, working_note_b64)
-        except Exception as e:
-            print(f"⚠️ Anthropic analysis failed: {e}")
-    
     if not analysis_result:
         raise Exception("All LLM providers failed")
     
@@ -216,7 +201,7 @@ async def _analyze_with_openai(question_b64: str, working_note_b64: str) -> Dict
     """
     
     response = client.chat.completions.create(
-        model="gpt-4-vision-preview",
+        model="gpt-4.1",
         messages=[
             {
                 "role": "user",
@@ -240,30 +225,6 @@ async def _analyze_with_openai(question_b64: str, working_note_b64: str) -> Dict
     import json
     analysis_text = response.choices[0].message.content
     return json.loads(analysis_text)
-
-
-async def _analyze_with_azure_openai(question_b64: str, working_note_b64: str) -> Dict[str, Any]:
-    """Analyze images using Azure OpenAI."""
-    from openai import AzureOpenAI
-    
-    client = AzureOpenAI(
-        azure_endpoint=settings.azure_openai_endpoint,
-        api_key=settings.azure_openai_api_key,
-        api_version=settings.azure_openai_api_version
-    )
-    
-    # Similar implementation to OpenAI but with Azure client
-    # Implementation would be similar to _analyze_with_openai
-    raise NotImplementedError("Azure OpenAI implementation needed")
-
-
-async def _analyze_with_anthropic(question_b64: str, working_note_b64: str) -> Dict[str, Any]:
-    """Analyze images using Anthropic Claude."""
-    client = Anthropic(api_key=settings.anthropic_api_key)
-    
-    # Anthropic implementation
-    # Note: Anthropic's vision API has different format
-    raise NotImplementedError("Anthropic implementation needed")
 
 
 @task(max_retries=2, retry_delay=1.0, timeout=120)

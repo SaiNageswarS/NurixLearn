@@ -186,7 +186,3 @@ class LocalStorageManager(StorageManager):
             print(f"❌ Failed to get image metadata for {container_name}/{image_name}: {e}")
             raise
 
-
-# Global storage manager instances
-azure_storage = AzureStorageManager()
-local_storage = LocalStorageManager()

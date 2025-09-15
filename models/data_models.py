@@ -21,83 +21,8 @@ class PyObjectId(ObjectId):
         return ObjectId(v)
 
     @classmethod
-    def __modify_schema__(cls, field_schema):
+    def __get_pydantic_json_schema__(cls, field_schema):
         field_schema.update(type="string")
-
-
-class ErrorSeverity(str, Enum):
-    """Error severity levels."""
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    CRITICAL = "critical"
-
-
-class ErrorStatus(str, Enum):
-    """Error status."""
-    DETECTED = "detected"
-    INVESTIGATING = "investigating"
-    RESOLVED = "resolved"
-    IGNORED = "ignored"
-
-
-class User(BaseModel):
-    """User model."""
-    
-    id: Optional[PyObjectId] = Field(default_factory=PyObjectId, alias="_id")
-    name: str = Field(..., min_length=1, max_length=100)
-    email: str = Field(..., regex=r'^[\w\.-]+@[\w\.-]+\.\w+$')
-    age: Optional[int] = Field(None, ge=0, le=150)
-    is_active: bool = Field(default=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: Optional[datetime] = None
-
-    class Config:
-        allow_population_by_field_name = True
-        arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
-
-
-class Product(BaseModel):
-    """Product model."""
-    
-    id: Optional[PyObjectId] = Field(default_factory=PyObjectId, alias="_id")
-    name: str = Field(..., min_length=1, max_length=200)
-    description: Optional[str] = Field(None, max_length=1000)
-    price: float = Field(..., gt=0)
-    category: str = Field(..., min_length=1, max_length=50)
-    in_stock: bool = Field(default=True)
-    tags: List[str] = Field(default_factory=list)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: Optional[datetime] = None
-
-    class Config:
-        allow_population_by_field_name = True
-        arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
-
-
-class ErrorLog(BaseModel):
-    """Error log model for tracking errors."""
-    
-    id: Optional[PyObjectId] = Field(default_factory=PyObjectId, alias="_id")
-    error_id: str = Field(..., description="Unique error identifier")
-    message: str = Field(..., description="Error message")
-    stack_trace: Optional[str] = Field(None, description="Stack trace")
-    severity: ErrorSeverity = Field(default=ErrorSeverity.MEDIUM)
-    status: ErrorStatus = Field(default=ErrorStatus.DETECTED)
-    source: str = Field(..., description="Source of the error")
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    user_id: Optional[str] = Field(None, description="Associated user ID")
-    workflow_id: Optional[str] = Field(None, description="Temporal workflow ID")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: Optional[datetime] = None
-    resolved_at: Optional[datetime] = None
-
-    class Config:
-        allow_population_by_field_name = True
-        arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
 
 
 # Math Evaluation Models
@@ -167,50 +92,7 @@ class MathEvaluationLog(BaseModel):
     updated_at: Optional[datetime] = None
 
     class Config:
-        allow_population_by_field_name = True
+        validate_by_name = True
         arbitrary_types_allowed = True
         json_encoders = {ObjectId: str}
 
-
-class ErrorNotification(BaseModel):
-    """Error notification model."""
-    error_id: str = Field(..., description="Error log ID")
-    user_id: str = Field(..., description="User to notify")
-    message: str = Field(..., description="Notification message")
-    severity: ErrorSeverity = Field(..., description="Error severity")
-    sent_at: Optional[datetime] = None
-
-
-# Request/Response Models
-class UserCreate(BaseModel):
-    """Model for creating a new user."""
-    name: str = Field(..., min_length=1, max_length=100)
-    email: str = Field(..., regex=r'^[\w\.-]+@[\w\.-]+\.\w+$')
-    age: Optional[int] = Field(None, ge=0, le=150)
-
-
-class UserUpdate(BaseModel):
-    """Model for updating a user."""
-    name: Optional[str] = Field(None, min_length=1, max_length=100)
-    email: Optional[str] = Field(None, regex=r'^[\w\.-]+@[\w\.-]+\.\w+$')
-    age: Optional[int] = Field(None, ge=0, le=150)
-    is_active: Optional[bool] = None
-
-
-class ProductCreate(BaseModel):
-    """Model for creating a new product."""
-    name: str = Field(..., min_length=1, max_length=200)
-    description: Optional[str] = Field(None, max_length=1000)
-    price: float = Field(..., gt=0)
-    category: str = Field(..., min_length=1, max_length=50)
-    tags: List[str] = Field(default_factory=list)
-
-
-class ProductUpdate(BaseModel):
-    """Model for updating a product."""
-    name: Optional[str] = Field(None, min_length=1, max_length=200)
-    description: Optional[str] = Field(None, max_length=1000)
-    price: Optional[float] = Field(None, gt=0)
-    category: Optional[str] = Field(None, min_length=1, max_length=50)
-    in_stock: Optional[bool] = None
-    tags: Optional[List[str]] = None

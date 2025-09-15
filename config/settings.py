@@ -25,10 +25,6 @@ class Settings(BaseSettings):
     
     # LLM Configuration
     openai_api_key: str = Field(default="", env="OPENAI_API_KEY")
-    azure_openai_endpoint: str = Field(default="", env="AZURE_OPENAI_ENDPOINT")
-    azure_openai_api_key: str = Field(default="", env="AZURE_OPENAI_API_KEY")
-    azure_openai_api_version: str = Field(default="2024-02-15-preview", env="AZURE_OPENAI_API_VERSION")
-    anthropic_api_key: str = Field(default="", env="ANTHROPIC_API_KEY")
     
     # Application Configuration
     app_name: str = Field(default="MathEvaluationApp", env="APP_NAME")
